@@ -706,7 +706,7 @@ class SettingsStreamWhipConnectionPriorities: Codable, ObservableObject {
 class SettingsStreamWhip: Codable, ObservableObject {
     @Published var headers: [SettingsHttpHeader] = []
     @Published var httpTransport: SettingsStreamWhipHttpTransport = .standard
-    @Published var bonding = true
+    @Published var bonding = false
     @Published var adaptiveBitrateEnabled = true
     var adaptiveBitrate = SettingsStreamWhipAdaptiveBitrate()
     var connectionPriorities = SettingsStreamWhipConnectionPriorities()
@@ -736,7 +736,7 @@ class SettingsStreamWhip: Codable, ObservableObject {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         headers = container.decode(.headers, [SettingsHttpHeader].self, [])
         httpTransport = container.decode(.httpTransport, SettingsStreamWhipHttpTransport.self, .standard)
-        bonding = container.decode(.bonding, Bool.self, true)
+        bonding = container.decode(.bonding, Bool.self, false)
         adaptiveBitrateEnabled = container.decode(.adaptiveBitrateEnabled, Bool.self, true)
         adaptiveBitrate = container.decode(.adaptiveBitrate, SettingsStreamWhipAdaptiveBitrate.self, .init())
         connectionPriorities = container.decode(
