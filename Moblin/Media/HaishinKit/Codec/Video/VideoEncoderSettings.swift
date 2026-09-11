@@ -39,6 +39,7 @@ struct VideoEncoderSettings {
     var videoSize: CMVideoDimensions
     var bitrate: UInt32
     var rateControl: RateControl = .abr
+    var retryBitrateUpdates = false
     var maxKeyFrameIntervalDuration: Int32
     var allowFrameReordering: Bool
     var profileLevel: String {

@@ -239,6 +239,10 @@ extension Model {
     private func startNetStreamWhip() {
         media.whipStartStream(url: stream.url,
                               headers: stream.whip.headers,
+                              bonding: stream.whip.bonding,
+                              connectionPriorities: stream.whip.connectionPriorities,
+                              adaptiveBitrate: stream.whip.adaptiveBitrateEnabled,
+                              adaptiveBitrateSettings: stream.whip.adaptiveBitrate,
                               videoCodec: stream.codec,
                               audioCodec: stream.audioCodec,
                               videoBitrate: Double(stream.bitrate))
@@ -344,7 +348,8 @@ extension Model {
         setStreamRateControl(stream: stream)
         setGraphicsImplementation()
         setAudioStreamBitrate(stream: stream)
-        setAudioStreamFormat(format: stream.audioCodec.toEncoder())
+        setAudioStreamFormat(format: stream.getProtocol() == .whip
+            ? (stream.audioCodec == .aac ? .aacWhip : .opusWhip) : stream.audioCodec.toEncoder())
         setAudioChannelsMap(channelsMap: [
             0: database.audio.outputToInputChannelsMap.channel1,
             1: database.audio.outputToInputChannelsMap.channel2,

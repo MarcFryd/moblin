@@ -1,7 +1,6 @@
 import AVFoundation
 import CoreMedia
-import DataChannel
-import libdatachannel
+import WagaWebRTC
 
 protocol WebrtcIngestClientDelegate: AnyObject {
     func webrtcIngestClientOnConnected(streamId: UUID)
@@ -17,72 +16,36 @@ protocol WebrtcIngestClientDelegate: AnyObject {
     func webrtcIngestClientOnDataReceived(streamId: UUID, count: Int)
 }
 
-private func decodeNtpTimestamp(v: UInt64) -> Double? {
-    guard v >= 2_208_988_800 else {
-        return nil
-    }
-    let secs = Int64(bitPattern: (v >> 32) - 2_208_988_800)
-    let nanos = Int64(Double(((v & 0xFFFF_FFFF) * 1_000_000_000) / (1 << 32)))
-    return Double(secs) + Double(nanos) / 1_000_000_000
-}
-
-private func toIngestClient(pointer: UnsafeMutableRawPointer?) -> WebrtcIngestClient? {
-    guard let pointer else {
-        return nil
-    }
-    return Unmanaged<WebrtcIngestClient>.fromOpaque(pointer).takeUnretainedValue()
-}
-
 private enum VideoCodec {
     case h264
     case h265
-
-    init?(trackDescription: String) {
-        if trackDescription.contains("h264") {
-            self = .h264
-        } else if trackDescription.contains("h265") {
-            self = .h265
-        } else {
-            return nil
-        }
-    }
 }
 
 private class TrackTimestamper {
-    private let clockRate: Double
     private let syncTimestamps: Bool
-    private let wrappingTimestamp: WrappingTimestamp
-    private var offset: Double?
 
-    init(name: String, clockRate: Double, syncTimestamps: Bool) {
-        self.clockRate = clockRate
+    init(syncTimestamps: Bool) {
         self.syncTimestamps = syncTimestamps
-        wrappingTimestamp = WrappingTimestamp(
-            name: name,
-            maximumTimestamp: CMTime(value: 0x1_0000_0000, timescale: 1)
-        )
     }
 
-    func timestampSeconds(trackId: Int32, timestamp: UInt32) -> Double? {
-        let timestampSeconds = unwrap(timestamp)
+    func timestampSeconds(_ frame: WagaMediaFrame) -> Double? {
+        guard frame.clockRate > 0 else {
+            return nil
+        }
+        let clockRate = Double(frame.clockRate)
+        let timestampSeconds = Double(frame.mediaTime) / clockRate
         guard syncTimestamps else {
             return timestampSeconds
         }
-        if offset == nil {
-            var rtpTimestamp: UInt64 = 0
-            var ntpTimestamp: UInt64 = 0
-            rtcGetTrackRtcpSyncTimestamps(trackId, &rtpTimestamp, &ntpTimestamp)
-            guard let ntpTimestamp = decodeNtpTimestamp(v: ntpTimestamp) else {
-                return nil
-            }
-            offset = ntpTimestamp - unwrap(UInt32(truncatingIfNeeded: rtpTimestamp))
+        guard let ntpMicroseconds = frame.ntpMicroseconds else {
+            return nil
         }
-        return timestampSeconds + offset!
-    }
-
-    private func unwrap(_ timestamp: UInt32) -> Double {
-        let timestamp = CMTime(value: Int64(timestamp), timescale: 1)
-        return Double(wrappingTimestamp.update(timestamp).value) / clockRate
+        let delta: Double = if frame.mediaTime >= frame.senderMediaTime {
+            Double(frame.mediaTime - frame.senderMediaTime) / clockRate
+        } else {
+            -Double(frame.senderMediaTime - frame.mediaTime) / clockRate
+        }
+        return Double(ntpMicroseconds) / 1_000_000 + delta
     }
 }
 
@@ -90,10 +53,10 @@ final class WebrtcIngestClient: @unchecked Sendable {
     private let name: String
     let streamId: UUID
     private let latency: Double
-    private let syncTimestamps: Bool
     private let softwareDecoding: Bool
-    private(set) var peerConnectionId: Int32 = -1
+    private let iceServers: [String]
     weak var delegate: (any WebrtcIngestClientDelegate)?
+    private var receiver: WagaReceiver?
     private var connected = false
     private var videoDecoder: VideoDecoder?
     private var videoFormatDescription: CMFormatDescription?
@@ -104,12 +67,8 @@ final class WebrtcIngestClient: @unchecked Sendable {
     private var pcmAudioFormat: AVAudioFormat?
     private var pcmAudioBuffer: AVAudioPCMBuffer?
     private var targetLatenciesSynchronizer: TargetLatenciesSynchronizer
-    private let iceServers: [String]
     private var videoCodec: VideoCodec = .h264
-    private var videoTrackId: Int32 = -1
-    private var audioTrackId: Int32 = -1
-    private let videoTimestamper: TrackTimestamper
-    private let audioTimestamper: TrackTimestamper
+    private let timestamper: TrackTimestamper
     private let dispatchQueue: DispatchQueue
 
     init(name: String,
@@ -124,138 +83,54 @@ final class WebrtcIngestClient: @unchecked Sendable {
         self.name = name
         self.streamId = streamId
         self.latency = latency
-        self.syncTimestamps = syncTimestamps
         self.softwareDecoding = softwareDecoding
         self.iceServers = iceServers
         self.dispatchQueue = dispatchQueue
         targetLatenciesSynchronizer = TargetLatenciesSynchronizer(targetLatency: latency)
-        videoTimestamper = TrackTimestamper(name: "\(name) video",
-                                            clockRate: 90000,
-                                            syncTimestamps: syncTimestamps)
-        audioTimestamper = TrackTimestamper(name: "\(name) audio",
-                                            clockRate: 48000,
-                                            syncTimestamps: syncTimestamps)
+        timestamper = TrackTimestamper(syncTimestamps: syncTimestamps)
         self.delegate = delegate
     }
 
-    func createPeerConnection() throws {
-        var config = rtcConfiguration()
-        peerConnectionId = iceServers.withCPointers {
-            config.iceServers = $0
-            config.iceServersCount = Int32(iceServers.count)
-            return rtcCreatePeerConnection(&config)
-        }
-        guard peerConnectionId >= 0 else {
-            throw "Failed to create peer connection"
-        }
-        rtcSetUserPointer(peerConnectionId, Unmanaged.passRetained(self).toOpaque())
-        try checkOk(rtcSetStateChangeCallback(peerConnectionId) { _, state, pointer in
-            toIngestClient(pointer: pointer)?.handleStateChange(state: state)
-        })
-        try checkOk(rtcSetGatheringStateChangeCallback(peerConnectionId) { _, state, pointer in
-            toIngestClient(pointer: pointer)?.handleGatheringStateChange(state: state)
-        })
-        try checkOk(rtcSetTrackCallback(peerConnectionId) { _, trackId, pointer in
-            toIngestClient(pointer: pointer)?.handleTrack(trackId: trackId)
-        })
+    func createOffer() throws {
+        let receiver = try makeReceiver()
+        receiver.createOffer { [weak self] result in self?.handleLocalDescription(result) }
     }
 
-    func setRemoteDescription(_ sdp: String, type: String) throws {
-        try checkOk(rtcSetRemoteDescription(peerConnectionId, sdp, type))
+    func acceptOffer(_ sdp: String) throws {
+        let receiver = try makeReceiver()
+        receiver.acceptOffer(sdp) { [weak self] result in self?.handleLocalDescription(result) }
     }
 
-    func setLocalDescription(_ type: String) throws {
-        try checkOk(rtcSetLocalDescription(peerConnectionId, type))
-    }
-
-    func getLocalDescription() throws -> String {
-        guard peerConnectionId >= 0 else {
-            throw "No peer connection"
-        }
-        let size = rtcGetLocalDescription(peerConnectionId, nil, 0)
-        guard size > 0 else {
-            throw "Failed to get local description size"
-        }
-        var buffer = [CChar](repeating: 0, count: Int(size))
-        let result = rtcGetLocalDescription(peerConnectionId, &buffer, Int32(size))
-        guard result >= 0 else {
-            throw "Failed to get local description"
-        }
-        return String(cArray: buffer)
-    }
-
-    func addRecvOnlyTrack(codec: rtcCodec,
-                          payloadType: Int32,
-                          mid: String,
-                          msid: String,
-                          name: String,
-                          profile: String) throws -> Int32
-    {
-        try mid.withCString { midCStr in
-            try name.withCString { nameCStr in
-                try UUID().uuidString.withCString { trackIdCStr in
-                    try msid.withCString { msidCStr in
-                        try profile.withCString { profileCStr in
-                            var trackInit = rtcTrackInit(
-                                direction: RTC_DIRECTION_RECVONLY,
-                                codec: codec,
-                                payloadType: payloadType,
-                                ssrc: makeSsrc(),
-                                mid: midCStr,
-                                name: nameCStr,
-                                msid: msidCStr,
-                                trackId: trackIdCStr,
-                                profile: profileCStr
-                            )
-                            return try checkOkReturnResult(
-                                rtcAddTrackEx(peerConnectionId, &trackInit)
-                            )
-                        }
-                    }
-                }
-            }
-        }
+    func acceptAnswer(_ sdp: String) {
+        receiver?.acceptAnswer(sdp)
     }
 
     func stop() {
         stopInternal()
     }
 
-    func setTrackCodec(trackId: Int32, description: String) {
-        let descriptionLower = description.lowercased()
-        let clientPointer = Unmanaged.passRetained(self).toOpaque()
-        rtcSetUserPointer(trackId, clientPointer)
-        if let videoCodec = VideoCodec(trackDescription: descriptionLower) {
-            self.videoCodec = videoCodec
-            videoTrackId = trackId
-            switch videoCodec {
-            case .h264:
-                rtcSetH264Depacketizer(trackId, RTC_NAL_SEPARATOR_LONG_START_SEQUENCE)
-            case .h265:
-                rtcSetH265Depacketizer(trackId, RTC_NAL_SEPARATOR_LONG_START_SEQUENCE)
-            }
-            rtcChainRtcpReceivingSession(trackId)
-            rtcSetFrameCallback(trackId) { _, data, size, info, pointer in
-                guard let data, size > 0, let info, let pointer else {
-                    return
-                }
-                let frameData = Data(bytes: data, count: Int(size))
-                let timestamp = info.pointee.timestamp
-                toIngestClient(pointer: pointer)?.handleVideoMessage(data: frameData, timestamp: timestamp)
-            }
-        } else if descriptionLower.contains("opus") {
-            audioTrackId = trackId
-            setupOpusDecoder()
-            rtcSetOpusDepacketizer(trackId)
-            rtcChainRtcpReceivingSession(trackId)
-            rtcSetFrameCallback(trackId) { _, data, size, info, pointer in
-                guard let data, size > 0, let info, let pointer else {
-                    return
-                }
-                let frameData = Data(bytes: data, count: Int(size))
-                let timestamp = info.pointee.timestamp
-                toIngestClient(pointer: pointer)?.handleAudioMessage(data: frameData, timestamp: timestamp)
-            }
+    private func makeReceiver() throws -> WagaReceiver {
+        receiver?.delegate = nil
+        receiver?.stop()
+        let receiver = try WagaReceiver(
+            queue: dispatchQueue,
+            iceServers: iceServers,
+            delegate: self
+        )
+        self.receiver = receiver
+        setupOpusDecoder()
+        return receiver
+    }
+
+    private func handleLocalDescription(_ result: Result<String, Error>) {
+        switch result {
+        case let .success(description):
+            delegate?.webrtcIngestClientOnGatheringComplete(
+                streamId: streamId,
+                localDescription: description
+            )
+        case let .failure(error):
+            stopInternal(reason: "ICE gathering failed: \(error)")
         }
     }
 
@@ -265,89 +140,19 @@ final class WebrtcIngestClient: @unchecked Sendable {
         opusAudioConverter = nil
         opusCompressedBuffer = nil
         pcmAudioBuffer = nil
-        rtcDeletePeerConnection(peerConnectionId)
-        peerConnectionId = -1
+        receiver?.delegate = nil
+        receiver?.stop()
+        receiver = nil
         connected = false
         if let reason {
             delegate?.webrtcIngestClientOnDisconnected(streamId: streamId, reason: reason)
         }
     }
 
-    private func handleStateChange(state: rtcState) {
-        dispatchQueue.async {
-            self.handleStateChangeInternal(state: state)
-        }
-    }
-
-    private func handleStateChangeInternal(state: rtcState) {
-        guard let state = DataChannelConnectionState(value: state) else {
-            return
-        }
-        logger.info("webrtc-ingest-client: Connection state: \(state)")
-        switch state {
-        case .connected:
-            guard !connected else {
-                return
-            }
-            connected = true
-            delegate?.webrtcIngestClientOnConnected(streamId: streamId)
-        case .disconnected, .failed, .closed:
-            stopInternal(reason: "Connection \(state)")
-        case .new, .connecting:
-            break
-        }
-    }
-
-    private func handleGatheringStateChange(state: rtcGatheringState) {
-        dispatchQueue.async {
-            self.handleGatheringStateChangeInternal(state: state)
-        }
-    }
-
-    private func handleGatheringStateChangeInternal(state: rtcGatheringState) {
-        guard let state = DataChannelGatheringState(value: state) else {
-            return
-        }
-        logger.info("webrtc-ingest-client: ICE gathering state: \(state)")
-        switch state {
-        case .complete:
-            do {
-                let localDescription = try getLocalDescription()
-                delegate?.webrtcIngestClientOnGatheringComplete(
-                    streamId: streamId,
-                    localDescription: localDescription
-                )
-            } catch {
-                stopInternal(reason: "Failed to get local description")
-            }
-        case .new, .inProgress:
-            break
-        }
-    }
-
-    private func handleTrack(trackId: Int32) {
-        dispatchQueue.async {
-            self.handleTrackInternal(trackId: trackId)
-        }
-    }
-
-    private func handleTrackInternal(trackId: Int32) {
-        var descBuffer = [CChar](repeating: 0, count: 4096)
-        let descSize = rtcGetTrackDescription(trackId, &descBuffer, Int32(descBuffer.count))
-        let description = descSize > 0 ? String(cArray: descBuffer) : ""
-        setTrackCodec(trackId: trackId, description: description)
-    }
-
-    private func handleVideoMessage(data: Data, timestamp: UInt32) {
-        dispatchQueue.async {
-            self.handleVideoMessageInternal(data: data, timestamp: timestamp)
-        }
-    }
-
-    private func handleVideoMessageInternal(data: Data, timestamp: UInt32) {
+    private func handleVideoMessage(_ frame: WagaMediaFrame) {
+        let data = frame.data
         delegate?.webrtcIngestClientOnDataReceived(streamId: streamId, count: data.count)
-        guard let timestampSeconds = videoTimestamper.timestampSeconds(trackId: videoTrackId,
-                                                                       timestamp: timestamp)
+        guard let timestampSeconds = timestamper.timestampSeconds(frame)
         else {
             return
         }
@@ -415,16 +220,10 @@ final class WebrtcIngestClient: @unchecked Sendable {
         videoDecoder?.decodeSampleBuffer(sampleBuffer)
     }
 
-    private func handleAudioMessage(data: Data, timestamp: UInt32) {
-        dispatchQueue.async {
-            self.handleAudioMessageInternal(data: data, timestamp: timestamp)
-        }
-    }
-
-    private func handleAudioMessageInternal(data: Data, timestamp: UInt32) {
+    private func handleAudioMessage(_ frame: WagaMediaFrame) {
+        let data = frame.data
         delegate?.webrtcIngestClientOnDataReceived(streamId: streamId, count: data.count)
-        guard let timestampSeconds = audioTimestamper.timestampSeconds(trackId: audioTrackId,
-                                                                       timestamp: timestamp)
+        guard let timestampSeconds = timestamper.timestampSeconds(frame)
         else {
             return
         }
@@ -531,6 +330,41 @@ final class WebrtcIngestClient: @unchecked Sendable {
             videoTargetLatency,
             audioTargetLatency
         )
+    }
+}
+
+extension WebrtcIngestClient: WagaReceiverDelegate {
+    func wagaReceiverConnected() {
+        guard !connected else {
+            return
+        }
+        connected = true
+        delegate?.webrtcIngestClientOnConnected(streamId: streamId)
+    }
+
+    func wagaReceiverDisconnected() {
+        stopInternal(reason: "Connection disconnected")
+    }
+
+    func wagaReceiverReceived(_ frame: WagaMediaFrame) {
+        switch frame.codec {
+        case .h264:
+            videoCodec = .h264
+            handleVideoMessage(frame)
+        case .h265:
+            videoCodec = .h265
+            handleVideoMessage(frame)
+        case .opus:
+            handleAudioMessage(frame)
+        case .aac:
+            stopInternal(reason: "AAC receiving is not supported. Select Opus on the publisher.")
+        case .none:
+            break
+        }
+    }
+
+    func wagaReceiverFailed(_ message: String) {
+        stopInternal(reason: message)
     }
 }
 

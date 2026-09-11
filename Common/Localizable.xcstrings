@@ -1,6 +1,146 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "For WHIP, Opus has the widest compatibility. Experimental AAC requires an AAC-capable receiver and uses 48 kHz stereo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For WHIP, Opus has the widest compatibility. Experimental AAC requires an AAC-capable receiver and uses 48 kHz stereo."
+          }
+        }
+      }
+    },
+    "Higher-priority connections carry more traffic when they are healthy. Changes apply the next time WHIP connects." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higher-priority connections carry more traffic when they are healthy. Changes apply the next time WHIP connects."
+          }
+        }
+      }
+    },
+    "AAC (experimental)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AAC (experimental)"
+          }
+        }
+      }
+    },
+    "AAC tests use 48 kHz stereo and require an AAC-capable WHIP receiver. Use Opus for the WagaStrim dashboard preview." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AAC tests use 48 kHz stereo and require an AAC-capable WHIP receiver. Use Opus for the WagaStrim dashboard preview."
+          }
+        }
+      }
+    },
+    "Bitrate recovery step" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bitrate recovery step"
+          }
+        }
+      }
+    },
+    "How much of the receiver's estimated bandwidth WHIP may use. 85% by default." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How much of the receiver's estimated bandwidth WHIP may use. 85% by default."
+          }
+        }
+      }
+    },
+    "How quickly WHIP returns to the selected target bitrate after bandwidth recovers." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How quickly WHIP returns to the selected target bitrate after bandwidth recovers."
+          }
+        }
+      }
+    },
+    "Network utilization" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network utilization"
+          }
+        }
+      }
+    },
+    "Opus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opus"
+          }
+        }
+      }
+    },
+    "Target bitrate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target bitrate"
+          }
+        }
+      }
+    },
+    "The lowest video bitrate WHIP may use when the connection becomes weak." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The lowest video bitrate WHIP may use when the connection becomes weak."
+          }
+        }
+      }
+    },
+    "WHIP starts at the target bitrate and returns to it whenever the connection allows." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WHIP starts at the target bitrate and returns to it whenever the connection allows."
+          }
+        }
+      }
+    },
+    "WHIP bonding" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WHIP bonding"
+          }
+        }
+      }
+    },
+    "Use Wi-Fi, cellular, and Ethernet together with a compatible receiver such as WagaStrim. Turn bonding off for standard WHIP services." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Wi-Fi, cellular, and Ethernet together with a compatible receiver such as WagaStrim. Turn bonding off for standard WHIP services."
+          }
+        }
+      }
+    },
     "" : {
       "localizations" : {
         "de" : {

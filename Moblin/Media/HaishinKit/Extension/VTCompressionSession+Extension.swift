@@ -11,6 +11,7 @@ extension VTCompressionSession {
         _ imageBuffer: CVImageBuffer,
         presentationTimeStamp: CMTime,
         duration _: CMTime,
+        forceKeyframe: Bool = false,
         outputHandler: @escaping VTCompressionOutputHandler
     ) -> OSStatus {
         VTCompressionSessionEncodeFrame(
@@ -18,7 +19,8 @@ extension VTCompressionSession {
             imageBuffer: imageBuffer,
             presentationTimeStamp: presentationTimeStamp,
             duration: .invalid,
-            frameProperties: nil,
+            frameProperties: forceKeyframe ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary :
+                nil,
             infoFlagsOut: nil,
             outputHandler: outputHandler
         )

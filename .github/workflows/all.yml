@@ -3,12 +3,15 @@ name: All
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   all:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
@@ -40,9 +43,13 @@ jobs:
           git diff --exit-code
       - name: Build
         run: |
+          rustup toolchain install stable --profile minimal
+          RUSTUP_TOOLCHAIN=stable CARGO_BUILD_JOBS=3 sh WagaWebRTC/scripts/build-xcframework.sh
           xcodebuild \
               -scheme Moblin \
+              -destination 'generic/platform=iOS' \
               -skipPackagePluginValidation \
               build \
               CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO

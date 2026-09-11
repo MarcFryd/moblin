@@ -1,0 +1,3 @@
+[submodule "WagaWebRTC"]
+	path = WagaWebRTC
+	url = https://github.com/Anywaystv/WagaWebRTC.git

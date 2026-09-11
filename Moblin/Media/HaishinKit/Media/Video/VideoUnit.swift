@@ -440,6 +440,10 @@ final class VideoUnit: NSObject, @unchecked Sendable {
         previewEncoder = nil
     }
 
+    func setPreviewEncoderBitrate(_ bitrate: UInt32) {
+        previewEncoder?.settings.mutate { $0.bitrate = bitrate }
+    }
+
     func setSize(capture: CGSize, canvas: CGSize) {
         canvasSize = canvas
         captureSession.setCaptureSize(capture)

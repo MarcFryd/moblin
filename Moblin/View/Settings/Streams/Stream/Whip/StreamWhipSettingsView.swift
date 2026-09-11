@@ -2,7 +2,7 @@ import SwiftUI
 
 struct StreamWhipSettingsView: View {
     let model: Model
-    let stream: SettingsStream
+    @ObservedObject var stream: SettingsStream
     @ObservedObject var whip: SettingsStreamWhip
 
     private func getBearerToken() -> String {
@@ -33,6 +33,93 @@ struct StreamWhipSettingsView: View {
                                        onSubmit: setBearerToken,
                                        sensitive: true)
                     .disabled(stream.enabled && model.isLive)
+            }
+            Section {
+                Picker("Target bitrate", selection: $stream.bitrate) {
+                    ForEach(model.database.bitratePresets) { preset in
+                        Text(formatBytesPerSecond(speed: Int64(preset.bitrate)))
+                            .tag(preset.bitrate)
+                    }
+                }
+                .onChange(of: stream.bitrate) { _ in
+                    if stream.enabled {
+                        model.setStreamBitrate(stream: stream)
+                    }
+                }
+                NavigationLink {
+                    StreamWhipAdaptiveBitrateSettingsView(
+                        model: model,
+                        stream: stream,
+                        adaptiveBitrate: whip.adaptiveBitrate
+                    )
+                } label: {
+                    Toggle("Adaptive bitrate", isOn: $whip.adaptiveBitrateEnabled)
+                        .disabled(stream.enabled && model.isLive)
+                        .onChange(of: whip.adaptiveBitrateEnabled) { _ in
+                            model.reloadStreamIfEnabled(stream: stream)
+                        }
+                }
+            } header: {
+                Text("Bitrate")
+            } footer: {
+                Text("WHIP starts at the target bitrate and returns to it whenever the connection allows.")
+            }
+            Section {
+                Toggle(isOn: $whip.bonding) {
+                    VStack(alignment: .leading) {
+                        Text("WHIP bonding")
+                        Text("Experimental")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(stream.enabled && model.isLive)
+                .onChange(of: whip.bonding) { _ in
+                    model.reloadStreamIfEnabled(stream: stream)
+                }
+                NavigationLink {
+                    StreamWhipConnectionPrioritiesSettingsView(
+                        model: model,
+                        stream: stream,
+                        priorities: whip.connectionPriorities
+                    )
+                } label: {
+                    Text("Connection priorities")
+                }
+                .disabled(!whip.bonding)
+            } footer: {
+                Text("""
+                Use Wi-Fi, cellular, and Ethernet together with a compatible receiver such as WagaStrim. \
+                Turn bonding off for standard WHIP services.
+                """)
+            }
+            Section {
+                NavigationLink {
+                    advancedSettings
+                } label: {
+                    Text("Advanced")
+                }
+            }
+        }
+        .navigationTitle("WHIP")
+    }
+
+    private var advancedSettings: some View {
+        Form {
+            Section {
+                Picker("Audio codec", selection: $stream.audioCodec) {
+                    Text("Opus").tag(SettingsStreamAudioCodec.opus)
+                    Text("AAC (experimental)").tag(SettingsStreamAudioCodec.aac)
+                }
+                .disabled(stream.enabled && model.isLive)
+                .onChange(of: stream.audioCodec) { _ in
+                    model.reloadStreamIfEnabled(stream: stream)
+                }
+            } footer: {
+                Text("""
+                AAC tests use 48 kHz stereo and require an AAC-capable WHIP receiver. \
+                Use Opus for the WagaStrim dashboard preview.
+                """)
             }
             Section {
                 Picker(selection: $whip.httpTransport) {
@@ -67,6 +154,6 @@ struct StreamWhipSettingsView: View {
                 }
             }
         }
-        .navigationTitle("WHIP")
+        .navigationTitle("Advanced")
     }
 }

@@ -623,33 +623,137 @@ enum SettingsStreamWhipHttpTransport: Codable, CaseIterable {
     }
 }
 
+class SettingsStreamWhipAdaptiveBitrate: Codable, ObservableObject {
+    @Published var minimumBitrate: UInt32 = 250_000
+    @Published var networkUtilization: UInt32 = 85
+    @Published var bitrateIncreaseStep: UInt32 = 250_000
+
+    init() {}
+
+    enum CodingKeys: CodingKey {
+        case minimumBitrate
+        case networkUtilization
+        case bitrateIncreaseStep
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(.minimumBitrate, minimumBitrate)
+        try container.encode(.networkUtilization, networkUtilization)
+        try container.encode(.bitrateIncreaseStep, bitrateIncreaseStep)
+    }
+
+    required init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        minimumBitrate = min(2_000_000, max(100_000, container.decode(
+            .minimumBitrate,
+            UInt32.self,
+            250_000
+        )))
+        networkUtilization = min(100, max(50, container.decode(.networkUtilization, UInt32.self, 85)))
+        bitrateIncreaseStep = min(1_000_000, max(50000, container.decode(
+            .bitrateIncreaseStep,
+            UInt32.self,
+            250_000
+        )))
+    }
+
+    func clone() -> SettingsStreamWhipAdaptiveBitrate {
+        let new = SettingsStreamWhipAdaptiveBitrate()
+        new.minimumBitrate = minimumBitrate
+        new.networkUtilization = networkUtilization
+        new.bitrateIncreaseStep = bitrateIncreaseStep
+        return new
+    }
+}
+
+class SettingsStreamWhipConnectionPriorities: Codable, ObservableObject {
+    @Published var wifi: Int = 10
+    @Published var cellular: Int = 9
+    @Published var wiredEthernet: Int = 10
+
+    init() {}
+
+    enum CodingKeys: CodingKey {
+        case wifi
+        case cellular
+        case wiredEthernet
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(.wifi, wifi)
+        try container.encode(.cellular, cellular)
+        try container.encode(.wiredEthernet, wiredEthernet)
+    }
+
+    required init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        wifi = container.decode(.wifi, Int.self, 10).clamped(to: 1 ... 10)
+        cellular = container.decode(.cellular, Int.self, 9).clamped(to: 1 ... 10)
+        wiredEthernet = container.decode(.wiredEthernet, Int.self, 10).clamped(to: 1 ... 10)
+    }
+
+    func clone() -> SettingsStreamWhipConnectionPriorities {
+        let new = SettingsStreamWhipConnectionPriorities()
+        new.wifi = wifi
+        new.cellular = cellular
+        new.wiredEthernet = wiredEthernet
+        return new
+    }
+}
+
 class SettingsStreamWhip: Codable, ObservableObject {
     @Published var headers: [SettingsHttpHeader] = []
     @Published var httpTransport: SettingsStreamWhipHttpTransport = .standard
+    @Published var bonding = true
+    @Published var adaptiveBitrateEnabled = true
+    var adaptiveBitrate = SettingsStreamWhipAdaptiveBitrate()
+    var connectionPriorities = SettingsStreamWhipConnectionPriorities()
 
     init() {}
 
     enum CodingKeys: CodingKey {
         case headers
         case httpTransport
+        case bonding
+        case adaptiveBitrateEnabled
+        case adaptiveBitrate
+        case connectionPriorities
     }
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.headers, headers)
         try container.encode(.httpTransport, httpTransport)
+        try container.encode(.bonding, bonding)
+        try container.encode(.adaptiveBitrateEnabled, adaptiveBitrateEnabled)
+        try container.encode(.adaptiveBitrate, adaptiveBitrate)
+        try container.encode(.connectionPriorities, connectionPriorities)
     }
 
     required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         headers = container.decode(.headers, [SettingsHttpHeader].self, [])
         httpTransport = container.decode(.httpTransport, SettingsStreamWhipHttpTransport.self, .standard)
+        bonding = container.decode(.bonding, Bool.self, true)
+        adaptiveBitrateEnabled = container.decode(.adaptiveBitrateEnabled, Bool.self, true)
+        adaptiveBitrate = container.decode(.adaptiveBitrate, SettingsStreamWhipAdaptiveBitrate.self, .init())
+        connectionPriorities = container.decode(
+            .connectionPriorities,
+            SettingsStreamWhipConnectionPriorities.self,
+            .init()
+        )
     }
 
     func clone() -> SettingsStreamWhip {
         let new = SettingsStreamWhip()
         new.headers = headers
         new.httpTransport = httpTransport
+        new.bonding = bonding
+        new.adaptiveBitrateEnabled = adaptiveBitrateEnabled
+        new.adaptiveBitrate = adaptiveBitrate.clone()
+        new.connectionPriorities = connectionPriorities.clone()
         return new
     }
 }
@@ -1822,6 +1926,8 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named,
         if getProtocol() == .srt, srt.adaptiveBitrateEnabled {
             bitrate = "<\(bitrate)"
         } else if getProtocol() == .rtmp, rtmp.adaptiveBitrateEnabled {
+            bitrate = "<\(bitrate)"
+        } else if getProtocol() == .whip, whip.adaptiveBitrateEnabled {
             bitrate = "<\(bitrate)"
         }
         return bitrate

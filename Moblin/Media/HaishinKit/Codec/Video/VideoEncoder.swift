@@ -27,6 +27,7 @@ class VideoEncoder: @unchecked Sendable {
     }
 
     private var isRunning = false
+    private var keyframeRequested = false
     private let lockQueue: DispatchQueue
     private var formatDescription: CMFormatDescription?
     weak var delegate: (any VideoEncoderDelegate)?
@@ -35,11 +36,16 @@ class VideoEncoder: @unchecked Sendable {
         didSet {
             oldValue?.invalidate()
             invalidateSession = false
+            if settings.value.retryBitrateUpdates {
+                currentBitrate = 0
+            }
+            bitrateRetryAt = nil
         }
     }
 
     private var invalidateSession = true
     private var currentBitrate: UInt32 = 0
+    private var bitrateRetryAt: ContinuousClock.Instant?
     private var oldBitrateVideoSize = CMVideoDimensions(width: 0, height: 0)
 
     init(lockQueue: DispatchQueue) {
@@ -64,6 +70,13 @@ class VideoEncoder: @unchecked Sendable {
             self.currentBitrate = 0
             self.formatDescription = nil
             self.isRunning = false
+            self.keyframeRequested = false
+        }
+    }
+
+    func requestKeyframe() {
+        lockQueue.async {
+            self.keyframeRequested = true
         }
     }
 
@@ -87,7 +100,8 @@ class VideoEncoder: @unchecked Sendable {
         let err = session?.encodeFrame(
             imageBuffer,
             presentationTimeStamp: presentationTimeStamp,
-            duration: duration
+            duration: duration,
+            forceKeyframe: keyframeRequested
         ) { [weak self] status, _, sampleBuffer in
             guard let self else {
                 return
@@ -106,6 +120,9 @@ class VideoEncoder: @unchecked Sendable {
                                                               sampleBuffer,
                                                               self.makeDecodeTimeStampOffset(settings))
             }
+        }
+        if err == noErr {
+            keyframeRequested = false
         }
         if err == kVTInvalidSessionErr {
             logger.info("video-encoder: Encode failed. Resetting session.")
@@ -138,13 +155,25 @@ class VideoEncoder: @unchecked Sendable {
         guard currentBitrate != settings.bitrate else {
             return
         }
-        currentBitrate = settings.bitrate
-        let bitrate = currentBitrate
+        if settings.retryBitrateUpdates {
+            guard session != nil else { return }
+            let now = ContinuousClock.now
+            if let bitrateRetryAt, now < bitrateRetryAt {
+                return
+            }
+            bitrateRetryAt = now.advanced(by: .seconds(1))
+        } else {
+            currentBitrate = settings.bitrate
+        }
+        let bitrate = settings.bitrate
         switch settings.rateControl {
         case .abr:
             let option = VTSessionProperty(key: .averageBitRate, value: NSNumber(value: bitrate))
             if let status = session?.setProperty(option), status != noErr {
                 logger.info("video-encoder: Failed to set option \(status) \(option)")
+                if settings.retryBitrateUpdates {
+                    return
+                }
             }
             let optionLimit = VTSessionProperty(
                 key: .dataRateLimits,
@@ -152,20 +181,33 @@ class VideoEncoder: @unchecked Sendable {
             )
             if let status = session?.setProperty(optionLimit), status != noErr {
                 logger.info("video-encoder: Failed to set option \(status) \(optionLimit)")
+                if settings.retryBitrateUpdates {
+                    return
+                }
             }
         case .cbr:
             let option = VTSessionProperty(key: .constantBitRate, value: NSNumber(value: bitrate))
             if let status = session?.setProperty(option), status != noErr {
                 logger.info("video-encoder: Failed to set option \(status) \(option)")
+                if settings.retryBitrateUpdates {
+                    return
+                }
             }
         case .vbr:
             if #available(iOS 26, *) {
                 let option = VTSessionProperty(key: .variableBitRate, value: NSNumber(value: bitrate))
                 if let status = session?.setProperty(option), status != noErr {
                     logger.info("video-encoder: Failed to set option \(status) \(option)")
+                    if settings.retryBitrateUpdates {
+                        return
+                    }
                 }
+            } else {
+                return
             }
         }
+        currentBitrate = bitrate
+        bitrateRetryAt = nil
     }
 
     private func getVideoSize(settings: VideoEncoderSettings) -> CMVideoDimensions? {

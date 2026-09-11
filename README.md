@@ -1,3 +1,13 @@
+# Moblin with WagaWebRTC (Experimental)
+
+This testing fork is based on upstream Moblin `ios-35.0.0-245`. It integrates
+[WagaWebRTC](https://github.com/Anywaystv/WagaWebRTC) for WHIP publishing, adaptive
+bitrate, Wi-Fi/cellular bonding, and WebRTC receiving.
+
+**[Build and test this fork](docs/wagawebrtc.md)** with Xcode on your own iPhone.
+The App Store and TestFlight links below install upstream Moblin and do not
+include these changes. This fork is not an official Moblin release.
+
 [<img src="docs/app-store.svg">](https://apps.apple.com/app/id6466745933)
 
 # Moblin - IRL Streaming

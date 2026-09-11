@@ -2,6 +2,7 @@ import AVFoundation
 import Network
 import SwiftUI
 import VideoToolbox
+import WagaWebRTC
 
 private func isMuted(level: Float) -> Bool {
     level.isNaN
@@ -141,6 +142,7 @@ final class Media: NSObject, @unchecked Sendable {
     {
         self.srtImplementation = srtImplementation
         self.limitAdaptiveBitrateByTransportBitrate = limitAdaptiveBitrateByTransportBitrate
+        videoEncoderSettings.retryBitrateUpdates = proto == .whip
         processor?.stop()
         stopAllNetStreams()
         let processor = Processor(delegate: self)
@@ -315,6 +317,7 @@ final class Media: NSObject, @unchecked Sendable {
     }
 
     func updateAdaptiveBitrate(overlay: Bool, relaxed: Bool) -> ([String], [String])? {
+        whipStream?.updateAdaptiveBitrate()
         updateTickCount += 1
         let is200MsTick = updateTickCount % 10 == 0
         if isSrtStreamActive() {
@@ -651,14 +654,32 @@ final class Media: NSObject, @unchecked Sendable {
 
     func whipStartStream(url: String,
                          headers: [SettingsHttpHeader],
+                         bonding: Bool,
+                         connectionPriorities: SettingsStreamWhipConnectionPriorities,
+                         adaptiveBitrate adaptiveBitrateEnabled: Bool,
+                         adaptiveBitrateSettings: SettingsStreamWhipAdaptiveBitrate,
                          videoCodec: SettingsStreamCodec,
                          audioCodec: SettingsStreamAudioCodec,
                          videoBitrate: Double)
     {
         adaptiveBitrate = nil
+        let runtimeAdaptiveBitrateSettings = WhipAdaptiveBitrateSettings(
+            minimumBitrate: UInt64(adaptiveBitrateSettings.minimumBitrate),
+            networkUtilization: UInt64(adaptiveBitrateSettings.networkUtilization),
+            bitrateIncreaseStep: UInt64(adaptiveBitrateSettings.bitrateIncreaseStep)
+        )
+        let runtimeConnectionPriorities = WagaConnectionPriorities(
+            wifi: Double(connectionPriorities.wifi),
+            cellular: Double(connectionPriorities.cellular),
+            wiredEthernet: Double(connectionPriorities.wiredEthernet)
+        )
         whipStream?.start(url: url,
                           headers: headers,
                           iceServers: [defaultStunServer],
+                          bonding: bonding,
+                          connectionPriorities: runtimeConnectionPriorities,
+                          adaptiveBitrate: adaptiveBitrateEnabled,
+                          adaptiveBitrateSettings: runtimeAdaptiveBitrateSettings,
                           videoCodec: videoCodec,
                           audioCodec: audioCodec,
                           videoBitrate: videoBitrate)
@@ -829,7 +850,9 @@ final class Media: NSObject, @unchecked Sendable {
     }
 
     func getVideoStreamBitrate(bitrate: UInt32) -> UInt32 {
-        if let adaptiveBitrate {
+        if let whipStream {
+            whipStream.getVideoBitrate()
+        } else if let adaptiveBitrate {
             adaptiveBitrate.getCurrentBitrate()
         } else {
             bitrate
@@ -837,7 +860,9 @@ final class Media: NSObject, @unchecked Sendable {
     }
 
     func setVideoStreamBitrate(bitrate: UInt32) {
-        if let adaptiveBitrate {
+        if let whipStream {
+            whipStream.setTargetVideoBitrate(bitrate)
+        } else if let adaptiveBitrate {
             adaptiveBitrate.setTargetBitrate(bitrate: bitrate)
         } else {
             videoEncoderSettings.bitrate = bitrate
@@ -1366,6 +1391,11 @@ extension Media: WhipStreamDelegate {
     func whipStreamStopEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
         processor?.stopEncoding(delegate)
     }
+
+    func whipStreamSetVideoBitrate(_ bitrate: UInt32) {
+        videoEncoderSettings.bitrate = bitrate
+        commitVideoEncoderSettings()
+    }
 }
 
 extension Media: MobcamStreamDelegate {
@@ -1397,14 +1427,17 @@ private final class PreviewStreamHandler: @unchecked Sendable {
     private let url: String
     private let resolution: SettingsStreamResolution
     private let bitrate: UInt32
+    private let currentBitrate: Atomic<UInt32>
     private var previewStream: WhipStream?
     private let reconnectTimer = SimpleTimer(queue: .main)
+    private let bitrateTimer = SimpleTimer(queue: .main)
 
     init(media: Media, url: String, resolution: SettingsStreamResolution, bitrate: UInt32) {
         self.media = media
         self.url = url
         self.resolution = resolution
         self.bitrate = bitrate
+        currentBitrate = .init(bitrate)
     }
 
     func start() {
@@ -1414,13 +1447,25 @@ private final class PreviewStreamHandler: @unchecked Sendable {
             url: url,
             headers: [],
             iceServers: [defaultStunServer],
+            bonding: true,
+            connectionPriorities: WagaConnectionPriorities(wifi: 10, cellular: 9, wiredEthernet: 10),
+            adaptiveBitrate: true,
+            adaptiveBitrateSettings: WhipAdaptiveBitrateSettings(
+                minimumBitrate: 250_000,
+                networkUtilization: 85,
+                bitrateIncreaseStep: 250_000
+            ),
             videoCodec: .h264avc,
             audioCodec: .opus,
             videoBitrate: Double(bitrate)
         )
+        bitrateTimer.startPeriodic(interval: 0.2) { [weak self] in
+            self?.previewStream?.updateAdaptiveBitrate()
+        }
     }
 
     func stop() {
+        bitrateTimer.stop()
         reconnectTimer.stop()
         previewStream?.stop()
         previewStream = nil
@@ -1456,15 +1501,23 @@ extension PreviewStreamHandler: WhipStreamDelegate {
     func whipStreamStartEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
         var videoSettings = VideoEncoderSettings()
         videoSettings.videoSize = resolution.dimensions(portrait: false)
-        videoSettings.bitrate = bitrate
+        videoSettings.bitrate = currentBitrate.value
+        videoSettings.retryBitrateUpdates = true
         videoSettings.profileLevel = kVTProfileLevel_H264_Baseline_AutoLevel as String
         var audioSettings = AudioEncoderSettings()
         audioSettings.bitrate = 64000
-        audioSettings.format = .opus
+        audioSettings.format = .opusWhip
         media.processor?.startPreviewEncoding(delegate, videoSettings, audioSettings)
     }
 
     func whipStreamStopEncoding(_: any AudioEncoderDelegate & VideoEncoderDelegate) {
         media.processor?.stopPreviewEncoding()
+    }
+
+    func whipStreamSetVideoBitrate(_ bitrate: UInt32) {
+        currentBitrate.mutate { $0 = bitrate }
+        processorControlQueue.async {
+            self.media.processor?.setPreviewEncoderBitrate(bitrate)
+        }
     }
 }

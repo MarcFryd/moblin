@@ -47,9 +47,8 @@ final class WhipServerClient {
             return
         }
         do {
-            try ingestClient.createPeerConnection()
-            try ingestClient.setRemoteDescription(sdpOffer, type: "offer")
             answerCompletion = completion
+            try ingestClient.acceptOffer(sdpOffer)
         } catch {
             completion(nil)
             stop()

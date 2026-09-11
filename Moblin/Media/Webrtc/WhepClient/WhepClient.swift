@@ -1,5 +1,4 @@
 import CoreMedia
-import libdatachannel
 
 private let dispatchQueue = DispatchQueue(label: "com.eerimoq.whep-client")
 private let reconnectDelay = 5.0
@@ -92,27 +91,7 @@ class WhepClient: @unchecked Sendable {
             return
         }
         do {
-            let msid = UUID().uuidString
-            try ingestClient.createPeerConnection()
-            let videoTrackId = try ingestClient.addRecvOnlyTrack(
-                codec: RTC_CODEC_H264,
-                payloadType: Int32(h264PayloadType),
-                mid: "0",
-                msid: msid,
-                name: "video",
-                profile: ""
-            )
-            ingestClient.setTrackCodec(trackId: videoTrackId, description: "h264")
-            let audioTrackId = try ingestClient.addRecvOnlyTrack(
-                codec: RTC_CODEC_OPUS,
-                payloadType: Int32(opusPayloadType),
-                mid: "1",
-                msid: msid,
-                name: "audio",
-                profile: ""
-            )
-            ingestClient.setTrackCodec(trackId: audioTrackId, description: "opus")
-            try ingestClient.setLocalDescription("offer")
+            try ingestClient.createOffer()
         } catch {
             logger.info("whep-client: \(streamId): Failed to create offer: \(error)")
             reconnectSoon(reason: "Failed to create offer")
@@ -167,12 +146,7 @@ class WhepClient: @unchecked Sendable {
             sessionUrl = URL(string: locationHeader, relativeTo: url)
         }
         logger.debug("whep-client: \(streamId): Got answer \(answer)")
-        do {
-            try ingestClient?.setRemoteDescription(answer, type: "answer")
-        } catch {
-            logger.info("whep-client: \(streamId): Failed to set remote answer: \(error)")
-            reconnectSoon(reason: "Failed to set remote answer")
-        }
+        ingestClient?.acceptAnswer(answer)
     }
 
     private func sendDeleteRequest(url: URL) {

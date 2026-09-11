@@ -79,9 +79,9 @@ class AudioEncoder: @unchecked Sendable {
 
     private func samplesPerBuffer() -> Int {
         switch settings.format {
-        case .aac:
+        case .aac, .aacWhip:
             1024
-        case .opus:
+        case .opus, .opusWhip:
             960
         }
     }

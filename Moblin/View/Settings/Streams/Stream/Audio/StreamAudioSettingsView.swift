@@ -22,7 +22,10 @@ struct StreamAudioSettingsView: View {
                 }
                 .disabled(stream.enabled && model.isLive)
             } footer: {
-                Text("WHIP generally only supports Opus.")
+                Text("""
+                For WHIP, Opus has the widest compatibility. \
+                Experimental AAC requires an AAC-capable receiver and uses 48 kHz stereo.
+                """)
             }
             Section {
                 HStack {

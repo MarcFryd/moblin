@@ -336,6 +336,10 @@ final class Processor: @unchecked Sendable {
         audio.stopPreviewEncoding()
     }
 
+    func setPreviewEncoderBitrate(_ bitrate: UInt32) {
+        video.setPreviewEncoderBitrate(bitrate)
+    }
+
     func startRunning() {
         video.startRunning()
         audio.startRunning()

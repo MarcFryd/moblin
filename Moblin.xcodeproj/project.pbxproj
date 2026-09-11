@@ -19,7 +19,8 @@
 		0360FD162F228EEB00FF8847 /* MetalPetal in Frameworks */ = {isa = PBXBuildFile; productRef = 0360FD152F228EEB00FF8847 /* MetalPetal */; };
 		0375F6E62F5354BE005BE7A8 /* Rist in Frameworks */ = {isa = PBXBuildFile; productRef = 0375F6E52F5354BE005BE7A8 /* Rist */; };
 		0375F6E92F535715005BE7A8 /* Rist in Frameworks */ = {isa = PBXBuildFile; productRef = 0375F6E82F535715005BE7A8 /* Rist */; };
-		0375F6EC2F53844C005BE7A8 /* DataChannel in Frameworks */ = {isa = PBXBuildFile; productRef = 0375F6EB2F53844C005BE7A8 /* DataChannel */; };
+		57A000032FFFF00000000003 /* WagaWebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 57A000022FFFF00000000002 /* WagaWebRTC */; };
+		57A000062FFFF00000000006 /* OpenSSL in Frameworks */ = {isa = PBXBuildFile; productRef = 57A000052FFFF00000000005 /* OpenSSL */; };
 		0375F6EF2F539602005BE7A8 /* Srt in Frameworks */ = {isa = PBXBuildFile; productRef = 0375F6EE2F539602005BE7A8 /* Srt */; };
 		0375FD7B2F539AAC005BE7A8 /* Srt in Frameworks */ = {isa = PBXBuildFile; productRef = 0375FD7A2F539AAC005BE7A8 /* Srt */; };
 		0376F6F92B9511030056B3D2 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0376F6F82B9511030056B3D2 /* WidgetKit.framework */; };
@@ -327,7 +328,8 @@
 				0318D36A2CF51D6900E12F3B /* SwiftProtobuf in Frameworks */,
 				03AC6B952D17786700832A7E /* TrueTime in Frameworks */,
 				0320D8762AED36860030418F /* WrappingHStack in Frameworks */,
-				0375F6EC2F53844C005BE7A8 /* DataChannel in Frameworks */,
+				57A000032FFFF00000000003 /* WagaWebRTC in Frameworks */,
+				57A000062FFFF00000000006 /* OpenSSL in Frameworks */,
 				035351962F1C27A500428DAC /* AppAuth in Frameworks */,
 				03F465EC2C441D1400630708 /* CrcSwift in Frameworks */,
 				03FA5E0130C0000000000003 /* FuzzyMatchingSwift in Frameworks */,
@@ -502,7 +504,8 @@
 				0360FD152F228EEB00FF8847 /* MetalPetal */,
 				0375F6E52F5354BE005BE7A8 /* Rist */,
 				0375F6E82F535715005BE7A8 /* Rist */,
-				0375F6EB2F53844C005BE7A8 /* DataChannel */,
+				57A000022FFFF00000000002 /* WagaWebRTC */,
+				57A000052FFFF00000000005 /* OpenSSL */,
 				0375F6EE2F539602005BE7A8 /* Srt */,
 				0375FD7A2F539AAC005BE7A8 /* Srt */,
 				03AA00012F6500000000AA00 /* ZipArchive */,
@@ -710,7 +713,8 @@
 				035351922F1C271700428DAC /* XCRemoteSwiftPackageReference "AppAuth-iOS" */,
 				0360FD142F228EEB00FF8847 /* XCRemoteSwiftPackageReference "MetalPetal" */,
 				0375F6E72F535715005BE7A8 /* XCRemoteSwiftPackageReference "Rist" */,
-				0375F6EA2F53844B005BE7A8 /* XCRemoteSwiftPackageReference "DataChannel" */,
+				57A000012FFFF00000000001 /* XCLocalSwiftPackageReference "WagaWebRTC" */,
+				57A000042FFFF00000000004 /* XCRemoteSwiftPackageReference "OpenSSL" */,
 				0375FD792F539AAC005BE7A8 /* XCRemoteSwiftPackageReference "SrtSwift" */,
 				03AA00002F6500000000AA00 /* XCRemoteSwiftPackageReference "swift-zip-archive" */,
 				035503F02FE7C9B500067E65 /* XCRemoteSwiftPackageReference "streamdeck-kit-ipad" */,
@@ -1585,7 +1589,22 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		57A000012FFFF00000000001 /* XCLocalSwiftPackageReference "WagaWebRTC" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = WagaWebRTC;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
+		57A000042FFFF00000000004 /* XCRemoteSwiftPackageReference "OpenSSL" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/krzyzanowskim/OpenSSL";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.6.3000;
+			};
+		};
 		0318D3682CF51D6900E12F3B /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-protobuf.git";
@@ -1637,14 +1656,6 @@
 		0375F6E72F535715005BE7A8 /* XCRemoteSwiftPackageReference "Rist" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/eerimoq/Rist";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		0375F6EA2F53844B005BE7A8 /* XCRemoteSwiftPackageReference "DataChannel" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/eerimoq/DataChannel";
 			requirement = {
 				branch = main;
 				kind = branch;
@@ -1757,6 +1768,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		57A000052FFFF00000000005 /* OpenSSL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 57A000042FFFF00000000004 /* XCRemoteSwiftPackageReference "OpenSSL" */;
+			productName = OpenSSL;
+		};
 		0318D3692CF51D6900E12F3B /* SwiftProtobuf */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0318D3682CF51D6900E12F3B /* XCRemoteSwiftPackageReference "swift-protobuf" */;
@@ -1801,10 +1817,9 @@
 			package = 0375F6E72F535715005BE7A8 /* XCRemoteSwiftPackageReference "Rist" */;
 			productName = Rist;
 		};
-		0375F6EB2F53844C005BE7A8 /* DataChannel */ = {
+		57A000022FFFF00000000002 /* WagaWebRTC */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0375F6EA2F53844B005BE7A8 /* XCRemoteSwiftPackageReference "DataChannel" */;
-			productName = DataChannel;
+			productName = WagaWebRTC;
 		};
 		0375F6EE2F539602005BE7A8 /* Srt */ = {
 			isa = XCSwiftPackageProductDependency;
