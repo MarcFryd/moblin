@@ -106,7 +106,8 @@ final class WhipStream: @unchecked Sendable {
     private var currentVideoBitrate: UInt64 = 1_000_000
     private var bitrateRamp = WagaBitrateRamp()
     private var totalByteCount: Int64 = 0
-    private var sessionUrl: URL?
+    private var videoOutput = WhipVideoOutput()
+    private var session: WhipSession?
     private var endpointUrl: URL?
     private var headers: [SettingsHttpHeader] = []
     private var connected = false
@@ -156,9 +157,21 @@ final class WhipStream: @unchecked Sendable {
         }
     }
 
+    func getVideoPacketLoss() -> Double? {
+        whipQueue.sync {
+            connected ? publisher?.videoPacketLoss() : nil
+        }
+    }
+
     func getVideoBitrate() -> UInt32 {
         whipQueue.sync {
             UInt32(clamping: currentVideoBitrate)
+        }
+    }
+
+    func getVideoOutputBitrate() -> Int64? {
+        whipQueue.sync {
+            connected ? videoOutput.sample(now: DispatchTime.now().uptimeNanoseconds) : nil
         }
     }
 
@@ -234,6 +247,7 @@ final class WhipStream: @unchecked Sendable {
                 connectionPriorities: connectionPriorities,
                 targetBitrate: adaptiveBitrate ? transportTargetBitrate() : nil,
                 diagnostics: logger.debugEnabled,
+                videoPacketLossStats: true,
                 delegate: publisherDelegate
             )
             self.publisher = publisher
@@ -269,10 +283,11 @@ final class WhipStream: @unchecked Sendable {
         generation = UUID()
         videoEncoder = nil
         stopEncoding()
-        if let sessionUrl {
-            sendDeleteRequest(url: sessionUrl)
+        if let session {
+            sendDeleteRequest(session: session)
         }
-        sessionUrl = nil
+        session = nil
+        videoOutput = WhipVideoOutput()
         endpointUrl = nil
         publisher?.delegate = nil
         publisher?.stop()
@@ -291,6 +306,7 @@ final class WhipStream: @unchecked Sendable {
             return
         }
         logger.debug("whip: Sending offer")
+        let headers = headers
         var request = URLRequest(url: endpointUrl)
         request.httpMethod = "POST"
         request.setContentType("application/sdp")
@@ -304,20 +320,26 @@ final class WhipStream: @unchecked Sendable {
                 guard let self else { return }
                 guard self.generation == generation else {
                     if let response = response?.http, response.isSuccessful,
-                       let location = response.value(forHTTPHeaderField: "Location"),
-                       let url = URL(string: location, relativeTo: endpointUrl)
+                       let session = WhipSession(
+                           response: response,
+                           endpointUrl: endpointUrl,
+                           headers: headers
+                       )
                     {
-                        sendDeleteRequest(url: url)
+                        sendDeleteRequest(session: session)
                     }
                     return
                 }
-                handleOfferResponse(data: data, response: response, error: error)
+                handleOfferResponse(data: data, response: response, error: error,
+                                    endpointUrl: endpointUrl, headers: headers)
             }
         }
         offerSent = true
     }
 
-    private func handleOfferResponse(data: Data?, response: URLResponse?, error: (any Error)?) {
+    private func handleOfferResponse(data: Data?, response: URLResponse?, error: (any Error)?,
+                                     endpointUrl: URL, headers: [SettingsHttpHeader])
+    {
         if let error {
             stopInternal(reason: "Sending WHIP offer failed: \(error.localizedDescription)")
             return
@@ -330,9 +352,7 @@ final class WhipStream: @unchecked Sendable {
             stopInternal(reason: "WHIP server returned HTTP status \(response.statusCode)")
             return
         }
-        if let locationHeader = response.value(forHTTPHeaderField: "Location") {
-            sessionUrl = URL(string: locationHeader, relativeTo: endpointUrl)
-        }
+        session = WhipSession(response: response, endpointUrl: endpointUrl, headers: headers)
         guard let data, let answer = String(data: data, encoding: .utf8) else {
             stopInternal(reason: "WHIP answer missing")
             return
@@ -341,10 +361,8 @@ final class WhipStream: @unchecked Sendable {
         publisher?.acceptAnswer(answer)
     }
 
-    private func sendDeleteRequest(url: URL) {
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        delegate?.whipStreamPerform(request: request, queue: whipQueue, completion: nil)
+    private func sendDeleteRequest(session: WhipSession) {
+        delegate?.whipStreamPerform(request: session.deleteRequest(), queue: whipQueue, completion: nil)
     }
 
     private func startEncoding() {
@@ -473,6 +491,7 @@ final class WhipStream: @unchecked Sendable {
             data: data
         )
         totalByteCount += Int64(data.count)
+        videoOutput.add(bytes: data.count)
     }
 }
 
@@ -485,6 +504,7 @@ private extension WhipStream {
             }
             connectTimer.stop()
             connected = true
+            videoOutput.start(now: DispatchTime.now().uptimeNanoseconds)
             logger.info("whip: Connected")
             startEncoding()
             delegate?.whipStreamOnConnected()

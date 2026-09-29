@@ -671,27 +671,37 @@ extension Model {
 
     func updateSpeed(now: ContinuousClock.Instant) {
         if isLive {
-            let speed = Int64(media.getVideoStreamBitrate(bitrate: stream.bitrate))
-            checkLowBitrate(speed: speed, now: now)
-            streamingHistoryStream?.updateBitrate(bitrate: speed)
-            let speedMbpsOneDecimal = String(format: "%.1f", Double(speed) / 1_000_000)
+            let speed: Int64? = if stream.getProtocol() == .whip {
+                media.whipVideoOutputBitrate()
+            } else {
+                Int64(media.getVideoStreamBitrate(bitrate: stream.bitrate))
+            }
+            if let speed {
+                checkLowBitrate(speed: speed, now: now)
+                streamingHistoryStream?.updateBitrate(bitrate: speed)
+            }
+            let speedMbpsOneDecimal = speed.map { String(format: "%.1f", Double($0) / 1_000_000) } ?? noValue
             if speedMbpsOneDecimal != bitrate.speedMbpsOneDecimal {
                 bitrate.speedMbpsOneDecimal = speedMbpsOneDecimal
             }
-            let speedString = formatBytesPerSecond(speed: speed)
+            let speedString = speed.map { formatBytesPerSecond(speed: $0) } ?? noValue
             let total = sizeFormatter.string(fromByteCount: media.streamTotal())
             let numberOfDestinations = media.getNumberOfDestinations()
-            let speedAndTotal = if numberOfDestinations == 1 {
+            var speedAndTotal = if numberOfDestinations == 1 {
                 String(localized: "\(speedString) (\(total))")
             } else {
                 String(localized: "\(speedString) x\(numberOfDestinations) (\(total))")
             }
+            if stream.getProtocol() == .whip {
+                speedAndTotal = String(localized: "Video output: \(speedString) · Media total: \(total)")
+                speedAndTotal += " · " + whipPacketLossText(media.whipVideoPacketLoss())
+            }
             if speedAndTotal != bitrate.speedAndTotal {
                 bitrate.speedAndTotal = speedAndTotal
             }
-            let bitrateStatusIconColor: Color? = if speed < stream.bitrate / 5 {
+            let bitrateStatusIconColor: Color? = if let speed, speed < stream.bitrate / 5 {
                 .red
-            } else if speed < stream.bitrate / 2 {
+            } else if let speed, speed < stream.bitrate / 2 {
                 .orange
             } else {
                 nil
@@ -935,6 +945,8 @@ extension Model {
             .red
         } else if numberOfFailedEncodings > previousBitrateStatusNumberOfFailedEncodings {
             .red
+        } else if stream.getProtocol() == .whip, let loss = media.whipVideoPacketLoss(), loss > 0 {
+            .red
         } else {
             .white
         }
@@ -1118,7 +1130,7 @@ extension Model: @preconcurrency MediaDelegate {
         DispatchQueue.main.async {
             switch self.stream.whip.httpTransport {
             case .standard:
-                httpRequest(request: request, queue: queue, completion: completion)
+                whipHttpRequest(request: request, queue: queue, completion: completion)
             case .remoteControl:
                 guard let remoteControlAssistant = self.remoteControlAssistant,
                       let url = request.url,
