@@ -545,6 +545,14 @@ final class Media: NSObject, @unchecked Sendable {
         }
     }
 
+    func whipVideoPacketLoss() -> Double? {
+        whipStream?.getVideoPacketLoss()
+    }
+
+    func whipVideoOutputBitrate() -> Int64? {
+        whipStream?.getVideoOutputBitrate()
+    }
+
     func streamTotal() -> Int64 {
         var total: Int64 = 0
         for stream in rtmpStreams {

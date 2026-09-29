@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Video output: %@ · Media total: %@" : {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video output: %1$@ · Media total: %2$@"
+          }
+        }
+      }
+    },
+    "Video packet loss: unavailable" : {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video packet loss: unavailable"
+          }
+        }
+      }
+    },
+    "Video packet loss: %@" : {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video packet loss: %@"
+          }
+        }
+      }
+    },
     "For WHIP, Opus has the widest compatibility. Experimental AAC requires an AAC-capable receiver and uses 48 kHz stereo." : {
       "localizations" : {
         "en" : {
